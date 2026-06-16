@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>CMB — Vérification Bon de Commande</title>
+<meta name="theme-color" content="#2F496E">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Vérif. CMB">
+<style>
+  :root{ --bleu:#2F496E; --terra:#C26949; --ok:#1B7F4B; --ko:#B3261E; }
+  *{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
+  body{margin:0;background:#f4f5f7;color:#222;padding-bottom:env(safe-area-inset-bottom)}
+  header{background:var(--bleu);color:#fff;padding:16px 18px;padding-top:calc(16px + env(safe-area-inset-top))}
+  header h1{margin:0;font-size:18px}
+  header p{margin:4px 0 0;font-size:12px;opacity:.85}
+  main{max-width:560px;margin:0 auto;padding:16px}
+  .card{background:#fff;border-radius:10px;padding:16px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+  button{background:var(--bleu);color:#fff;border:0;border-radius:8px;padding:13px 16px;font-size:15px;cursor:pointer;width:100%}
+  button.alt{background:#fff;color:var(--bleu);border:1.5px solid var(--bleu)}
+  #reader{width:100%;border-radius:8px;overflow:hidden;margin-top:10px}
+  textarea{width:100%;min-height:70px;font-size:12px;border:1px solid #ccc;border-radius:6px;padding:8px;margin-top:8px}
+  .result{display:none;border-radius:10px;padding:16px;margin-bottom:14px;color:#fff}
+  .result.show{display:block}
+  .result.valid{background:var(--ok)}
+  .result.invalid{background:var(--ko)}
+  .result h2{margin:0 0 8px;font-size:18px}
+  table{width:100%;border-collapse:collapse;margin-top:10px;background:#fff;border-radius:8px;overflow:hidden}
+  td{padding:8px 10px;border-bottom:1px solid #eee;font-size:14px}
+  td:first-child{color:#666;width:42%}
+  td:last-child{font-weight:bold}
+  .muted{font-size:12px;color:#777;text-align:center;margin-top:6px}
+  .warn{background:#FFF4E5;border:1px solid #E0A458;color:#7a4b10;border-radius:8px;padding:10px;font-size:13px;margin-bottom:12px;display:none}
+  .warn.show{display:block}
+  .badge{display:inline-block;font-size:11px;background:#e8eaf0;color:#444;border-radius:10px;padding:2px 8px;margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Vérification Bon de Commande — CMB S.A.</h1>
+  <p>Contrôle d'authenticité hors ligne · Signature Ed25519</p>
+</header>
+<main>
+  <div id="fileWarn" class="warn">
+    Cette page est ouverte en local (file://). La caméra est désactivée par le navigateur dans ce mode.
+    Utilisez la <b>saisie manuelle</b> ci-dessous, ou installez l'application via une adresse HTTPS.
+  </div>
+
+  <div class="card">
+    <button id="btnScan">Scanner le QR code</button>
+    <div id="reader"></div>
+    <button class="alt" id="btnManual" style="margin-top:10px">Saisir / coller le code manuellement</button>
+    <textarea id="manual" placeholder="Coller ici le contenu du QR (commence par CMB1|...)" style="display:none"></textarea>
+    <button id="btnCheck" style="margin-top:8px;display:none">Vérifier</button>
+    <div><span class="badge" id="netBadge">Hors ligne · clé publique embarquée</span></div>
+  </div>
+
+  <div id="result" class="result">
+    <h2 id="rTitle"></h2>
+    <div id="rMsg"></div>
+    <table id="rTable"></table>
+  </div>
+  <p class="muted">Outil officiel CMB S.A. · Aucune donnée n'est transmise</p>
+</main>
+
+<script src="lib/html5-qrcode.min.js"></script>
+<script src="lib/nacl.min.js"></script>
+<script>
+// ---- Cle publique CMB (base64, 32 octets) — diffusable sans risque ----
+const CMB_PUB_B64 = "PB8zUNNGTyxSeefnQV5TXhwel/Wz4U5ay0CZ9rgQ4D0=";
+
+function b64ToBytes(b64){
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) out[i]=bin.charCodeAt(i);
+  return out;
+}
+function b64urlToBytes(s){
+  s = s.replace(/-/g,'+').replace(/_/g,'/');
+  while(s.length % 4) s += '=';
+  return b64ToBytes(s);
+}
+const PUB = b64ToBytes(CMB_PUB_B64);
+
+function verifierPayload(payload){
+  const parts = payload.trim().split("|");
+  if(parts.length !== 8 || parts[0] !== "CMB1")
+    return {ok:false, msg:"Format QR non reconnu (ce n'est pas un BC CMB valide).", data:null};
+  const msg = parts.slice(0,7).join("|");
+  let sig;
+  try { sig = b64urlToBytes(parts[7]); } catch(e){
+    return {ok:false, msg:"Signature illisible.", data:null};
+  }
+  const msgBytes = new TextEncoder().encode(msg);
+  const ok = nacl.sign.detached.verify(msgBytes, sig, PUB);
+  if(!ok) return {ok:false, msg:"SIGNATURE INVALIDE — document falsifié ou non émis par CMB.", data:null};
+  return {ok:true, msg:"SIGNATURE VALIDE — document authentique émis par CMB S.A.", data:{
+    "N° BC":parts[1], "Transporteur":parts[2], "Tonnage (t)":Number(parts[3]).toLocaleString('fr-FR'),
+    "Montant HT (FCFA)":Number(parts[4]).toLocaleString('fr-FR'), "Période du":parts[5], "au":parts[6]
+  }};
+}
+
+function afficher(res){
+  const box=document.getElementById('result');
+  box.className='result show '+(res.ok?'valid':'invalid');
+  document.getElementById('rTitle').textContent = res.ok ? "✓ AUTHENTIQUE" : "✗ NON VALIDE";
+  document.getElementById('rMsg').textContent = res.msg;
+  const tbl=document.getElementById('rTable'); tbl.innerHTML='';
+  if(res.data){
+    for(const k in res.data){
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${k}</td><td>${res.data[k]}</td>`;
+      tbl.appendChild(tr);
+    }
+  }
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+// ---- Detection file:// (camera indisponible) ----
+const isFile = location.protocol === 'file:';
+if(isFile){ document.getElementById('fileWarn').classList.add('show'); }
+
+// ---- Scanner ----
+let scanner=null;
+document.getElementById('btnScan').addEventListener('click',()=>{
+  if(typeof Html5Qrcode === 'undefined'){ alert("Module de scan non chargé."); return; }
+  if(scanner){ scanner.stop().then(()=>{scanner.clear();scanner=null;document.getElementById('reader').innerHTML='';}); return; }
+  scanner = new Html5Qrcode("reader");
+  scanner.start({facingMode:"environment"}, {fps:10, qrbox:240},
+    (decoded)=>{ scanner.stop().then(()=>{scanner.clear();scanner=null;}); afficher(verifierPayload(decoded)); },
+    ()=>{}
+  ).catch(e=>{ alert("Caméra indisponible : "+e+"\nUtilisez la saisie manuelle."); });
+});
+
+// ---- Saisie manuelle ----
+document.getElementById('btnManual').addEventListener('click',()=>{
+  document.getElementById('manual').style.display='block';
+  document.getElementById('btnCheck').style.display='block';
+});
+document.getElementById('btnCheck').addEventListener('click',()=>{
+  const v=document.getElementById('manual').value;
+  if(v.trim()) afficher(verifierPayload(v));
+});
+
+// ---- Service worker (mode hors ligne) ----
+if('serviceWorker' in navigator && !isFile){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
