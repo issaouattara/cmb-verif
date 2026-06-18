@@ -71,7 +71,7 @@
 <script src="lib/nacl.min.js"></script>
 <script>
 // ---- Cle publique CMB (base64, 32 octets) — diffusable sans risque ----
-const CMB_PUB_B64 = "wWrqj3cY3QY+FRyg3dyzrY39lYhiFbxuhHw2AfjDMHA=";
+const CMB_PUB_B64 = "PB8zUNNGTyxSeefnQV5TXhwel/Wz4U5ay0CZ9rgQ4D0=";
 
 function b64ToBytes(b64){
   const bin = atob(b64);
@@ -88,7 +88,7 @@ const PUB = b64ToBytes(CMB_PUB_B64);
 
 function verifierPayload(payload){
   const parts = payload.trim().split("|");
-  if(parts.length !== 8 || parts[0] !== "CMB1")
+  if(parts.length !== 8 || parts[0] !== "CMB2")
     return {ok:false, msg:"Format QR non reconnu (ce n'est pas un BC CMB valide).", data:null};
   const msg = parts.slice(0,7).join("|");
   let sig;
@@ -100,7 +100,9 @@ function verifierPayload(payload){
   if(!ok) return {ok:false, msg:"SIGNATURE INVALIDE — document falsifié ou non émis par CMB.", data:null};
   return {ok:true, msg:"SIGNATURE VALIDE — document authentique émis par CMB S.A.", data:{
     "N° BC":parts[1], "Transporteur":parts[2], "Tonnage (t)":Number(parts[3]).toLocaleString('fr-FR'),
-    "Montant HT (FCFA)":Number(parts[4]).toLocaleString('fr-FR'), "Période du":parts[5], "au":parts[6]
+    "Tarif Foungbesso (FCFA/t)":Number(parts[4]).toLocaleString('fr-FR'),
+    "Tarif Moyango (FCFA/t)":Number(parts[5]).toLocaleString('fr-FR'),
+    "Date de début":parts[6]
   }};
 }
 
