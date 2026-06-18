@@ -1,5 +1,5 @@
 // CMB — Service Worker : met en cache l'application pour un fonctionnement hors ligne total.
-const CACHE = "cmb-verif-v1";
+const CACHE = "cmb-verif-v2";
 const ASSETS = [
   "./",
   "./index.html",
